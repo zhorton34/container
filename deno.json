@@ -1,0 +1,20 @@
+{
+  "name": "@findhow/container",
+  "version": "0.0.1",
+  "tasks": {
+    "test": "deno test --allow-all"
+  },
+  "imports": {
+    "zod": "https://deno.land/x/zod@v3.21.4/mod.ts",
+    "@std/": "jsr:@std/",
+    "@std/async": "jsr:@std/async",
+    "@std/assert": "jsr:@std/assert",
+    "@std/collections": "jsr:@std/collections"
+  },
+  "exports": {
+    ".": "./mod.ts",
+    "./errors": "./errors.ts",
+    "./container": "./container.ts",
+    "./dicontainer": "./dicontainer.ts"
+  }
+}

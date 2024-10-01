@@ -7,7 +7,7 @@ safety.
 
 ## @Findhow/Container Comparison to other Popular DI Containers
 
-| Feature                              | Custom DI Container | Inversify | NestJS    | TypeDI | TSyringe |
+| Feature                              | @findhow/container | Inversify | NestJS    | TypeDI | TSyringe |
 | ------------------------------------ | ------------------- | --------- | --------- | ------ | -------- |
 | **TypeScript Support**               | ✅                  | ✅        | ✅        | ✅     | ✅       |
 | **Does not Need Decorator-based DI** | ✅                  | ❌        | ❌        | ❌     | ❌       |

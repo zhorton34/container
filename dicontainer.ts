@@ -4,30 +4,26 @@ import {
   CircularDependencyError, 
   UnresolvedDependencyError 
 } from './errors.ts';
-export type Bindable = string | symbol | Function | object;
+import { 
+  Bindable, 
+  Binding, 
+  ContextualBinding, 
+  Middleware, 
+  WithParamTypes, 
+  IDIContainer, 
+  IContextualBindingBuilder, 
+  IContextualBindingNeedsBuilder, 
+  IObserver,
+  Lifetime, // Import Lifetime enum directly
+} from './types.ts';
 
-export enum Lifetime {
-  Singleton,
-  Transient,
-  Scoped,
-}
-
-export interface Binding {
-  factory: Function;
-  lifetime: Lifetime;
-  instance?: any;
-  resolver: Function;
-}
-
-export interface ContextualBinding {
-  when: Bindable;
-  need: Bindable;
-  give: Function | any;
-}
-
-type Middleware = (next: () => any) => any;
-
-export class DIContainer {
+/**
+ * Dependency Injection Container
+ * 
+ * The DIContainer class provides a way to manage dependencies and their lifecycles.
+ * It supports various binding types, contextual bindings, and middleware.
+ */
+export class DIContainer implements IDIContainer {
   private bindings = new Map<Bindable, Binding>();
   private instances = new Map<Bindable, any>();
   private aliases: Map<string | symbol, Bindable> = new Map();
@@ -38,7 +34,21 @@ export class DIContainer {
   private children: DIContainer[] = [];
   private middlewares: Middleware[] = [];
 
-  // Bind a type to a factory function
+  // Binding Methods
+
+  /**
+   * Bind a type to a factory function.
+   * 
+   * @param abstract - The abstract type to bind.
+   * @param factory - The factory function to create the instance.
+   * @param schema - Optional Zod schema for validation.
+   * @returns The DIContainer instance.
+   * 
+   * @example
+   * ```typescript
+   * container.bind('MyService', () => new MyService());
+   * ```
+   */
   bind(abstract: Bindable, factory: Function, schema?: z.ZodType<any>): this {
     if (schema) {
       try {
@@ -53,13 +63,24 @@ export class DIContainer {
     }
     this.bindings.set(abstract, {
       factory,
-      lifetime: Lifetime.Transient,
+      lifetime: Lifetime.Transient, // Use Lifetime.Transient as default
       resolver: (container: DIContainer) => factory(container),
     });
     return this;
   }
 
-  // Bind a singleton
+  /**
+   * Bind a singleton.
+   * 
+   * @param abstract - The abstract type to bind.
+   * @param factory - The factory function to create the instance.
+   * @returns The DIContainer instance.
+   * 
+   * @example
+   * ```typescript
+   * container.singleton('MySingletonService', () => new MySingletonService());
+   * ```
+   */
   singleton(abstract: Bindable, factory: Function): this {
     this.bindings.set(abstract, {
       factory,
@@ -69,18 +90,50 @@ export class DIContainer {
     return this;
   }
 
-  // Bind an instance
+  /**
+   * Bind an instance.
+   * 
+   * @param abstract - The abstract type to bind.
+   * @param instance - The instance to bind.
+   * @returns The DIContainer instance.
+   * 
+   * @example
+   * ```typescript
+   * container.instance('MyInstance', new MyInstance());
+   * ```
+   */
   instance(abstract: Bindable, instance: any): this {
     this.instances.set(abstract, instance);
     return this;
   }
 
-  // Alias an abstract type
+  /**
+   * Alias an abstract type.
+   * 
+   * @param alias - The alias to create.
+   * @param abstract - The abstract type to alias.
+   * 
+   * @example
+   * ```typescript
+   * container.alias('Logger', 'ConsoleLogger');
+   * ```
+   */
   alias(alias: string | symbol, abstract: Bindable): void {
     this.aliases.set(alias, abstract);
   }
 
-  // Tagging
+  /**
+   * Tag multiple abstracts with a tag.
+   * 
+   * @param abstracts - The abstracts to tag.
+   * @param tag - The tag to assign.
+   * @returns The DIContainer instance.
+   * 
+   * @example
+   * ```typescript
+   * container.tag(['ServiceA', 'ServiceB'], 'services');
+   * ```
+   */
   tag(abstracts: Bindable[], tag: string): this {
     if (!this.tags.has(tag)) {
       this.tags.set(tag, []);
@@ -89,28 +142,20 @@ export class DIContainer {
     return this;
   }
 
-  createInstance<T>(Target: Bindable & WithParamTypes): T {
-    // Remove the use of Reflect.getMetadata
-    const paramTypes = Target.paramTypes || [];
-    const injections = paramTypes.map((param: any) => this.resolveWithContext(param, Target));
-    return new (Target as any)(...injections);
-  }
+  // Resolution Methods
 
-  private resolveWithContext(abstract: Bindable, context: Bindable): any {
-    const contextualBindings = this.contextualBindings.get(context) || [];
-    const binding = contextualBindings.find(b => b.need === abstract);
-    if (binding) {
-      return typeof binding.give === 'function' ? binding.give(this) : binding.give;
-    }
-    return this.resolve(abstract);
-  }
-
-  // Contextual binding
-  when(concrete: Bindable): ContextualBindingBuilder {
-    return new ContextualBindingBuilder(this, concrete);
-  }
-
-  // Resolve a type
+  /**
+   * Resolve a type.
+   * 
+   * @param abstract - The abstract type to resolve.
+   * @param context - Optional context for contextual bindings.
+   * @returns The resolved instance.
+   * 
+   * @example
+   * ```typescript
+   * const myService = container.resolve<MyService>('MyService');
+   * ```
+   */
   resolve<T = any>(abstract: Bindable, context?: Bindable): T {
     const originalAbstract = abstract;
     abstract = this.getAlias(abstract);
@@ -120,7 +165,19 @@ export class DIContainer {
     }
 
     if (this.resolvingStack.includes(abstract)) {
-      throw new CircularDependencyError(this.resolvingStack.concat(abstract).map(String));
+      // Return a proxy object for circular dependencies
+      return new Proxy({} as any, {
+        get: (target, prop) => {
+          if (prop === 'isCircularDependency') return true;
+          if (typeof prop === 'string' && prop !== 'then') {
+            return (...args: any[]) => {
+              const resolvedInstance = this.resolve(abstract);
+              return (resolvedInstance as any)[prop](...args);
+            };
+          }
+          return undefined;
+        },
+      });
     }
 
     this.resolvingStack.push(abstract);
@@ -137,10 +194,7 @@ export class DIContainer {
       let instance;
       if (binding.lifetime === Lifetime.Singleton && binding.instance) {
         instance = binding.instance;
-      } else if (binding.lifetime === Lifetime.Scoped) {
-        instance = binding.resolver(this);
       } else {
-        // Check for contextual bindings
         if (context) {
           const contextualBindings = this.contextualBindings.get(context) || [];
           const contextualBinding = contextualBindings.find(b => b.need === abstract);
@@ -167,67 +221,84 @@ export class DIContainer {
     }
   }
 
-  // Build an instance
-  private build(binding: Binding, context?: Bindable): any {
-    return binding.resolver(this, context);
-  }
-
-  // Get alias
-  private getAlias(abstract: Bindable): Bindable {
-    if (typeof abstract === 'string' || typeof abstract === 'symbol') {
-      return this.aliases.get(abstract) || abstract;
-    }
-    return abstract;
-  }
-
-  // Get tagged
-  tagged(tag: string): any[] {
-    const abstracts = this.tags.get(tag) || [];
-    return abstracts.map((abstract) => this.resolve(abstract));
-  }
-
-  // Add new methods for async resolution
+  /**
+   * Resolve a type asynchronously.
+   * 
+   * @param abstract - The abstract type to resolve.
+   * @param context - Optional context for contextual bindings.
+   * @returns A promise that resolves to the instance.
+   * 
+   * @example
+   * ```typescript
+   * const myService = await container.resolveAsync<MyService>('MyService');
+   * ```
+   */
   async resolveAsync<T = any>(abstract: Bindable, context?: Bindable): Promise<T> {
-    const instance = this.resolve<T | Promise<T>>(abstract, context);
+    const instance = await this.resolve<T>(abstract, context);
     return instance instanceof Promise ? await instance : instance;
   }
 
-  // Add new method for transient bindings
-  transient(abstract: Bindable, factory: Function): this {
-    this.bindings.set(abstract, {
-      factory,
-      lifetime: Lifetime.Transient,
-      resolver: factory,
-    });
-    return this;
+  /**
+   * Create an instance of a class with dependencies.
+   * 
+   * @param Target - The class to instantiate.
+   * @returns The created instance.
+   * 
+   * @example
+   * ```typescript
+   * const myClassInstance = container.createInstance(MyClass);
+   * ```
+   */
+  createInstance<T>(Target: Bindable & WithParamTypes): T {
+    const paramTypes = Target.paramTypes || [];
+    const injections = paramTypes.map((param: any) => this.resolveWithContext(param, Target));
+    return new (Target as any)(...injections);
   }
 
-  // Add new method for scoped bindings
-  scoped(abstract: Bindable, factory: Function): this {
-    this.bindings.set(abstract, {
-      factory,
-      lifetime: Lifetime.Scoped,
-      resolver: (container: DIContainer) => {
-        if (container.instances.has(abstract)) {
-          return container.instances.get(abstract);
-        }
-        const instance = factory(container);
-        container.instances.set(abstract, instance);
-        return instance;
-      },
-    });
-    return this;
+  // Contextual Binding Methods
+
+  /**
+   * Create a contextual binding.
+   * 
+   * @param concrete - The concrete type to bind.
+   * @returns A builder for defining the contextual binding.
+   * 
+   * @example
+   * ```typescript
+   * container.when('MyService').needs('Config').give(() => new Config());
+   * ```
+   */
+  when(concrete: Bindable): IContextualBindingBuilder {
+    return new ContextualBindingBuilder(this, concrete);
   }
 
-  // Add new method to create a scope
-  createScope(): DIContainer {
+  // Lifecycle Methods
+
+  /**
+   * Create a new scope.
+   * 
+   * @returns A new DIContainer instance representing the scope.
+   * 
+   * @example
+   * ```typescript
+   * const scopedContainer = container.createScope();
+   * ```
+   */
+  createScope(): IDIContainer {
     const childContainer = new DIContainer();
     childContainer.parent = this;
     this.children.push(childContainer);
     return childContainer;
   }
 
-  // Add new method for disposal
+  /**
+   * Dispose of the container and its bindings.
+   * 
+   * @example
+   * ```typescript
+   * container.dispose();
+   * ```
+   */
   dispose(): void {
     for (const [, binding] of this.bindings) {
       if (binding.instance && typeof binding.instance.dispose === 'function') {
@@ -245,12 +316,82 @@ export class DIContainer {
     this.children = [];
   }
 
-  createChild(): DIContainer {
+  /**
+   * Create a child container.
+   * 
+   * @returns A new DIContainer instance representing the child container.
+   * 
+   * @example
+   * ```typescript
+   * const childContainer = container.createChild();
+   * ```
+   */
+  createChild(): IDIContainer {
     const child = new DIContainer();
     child.parent = this;
     return child;
   }
 
+  /**
+   * Bind a transient.
+   * 
+   * @param abstract - The abstract type to bind.
+   * @param factory - The factory function to create the instance.
+   * @returns The DIContainer instance.
+   * 
+   * @example
+   * ```typescript
+   * container.transient('MyService', () => new MyService());
+   * ```
+   */
+  transient(abstract: Bindable, factory: Function): this {
+    this.bindings.set(abstract, {
+      factory,
+      lifetime: Lifetime.Transient,
+      resolver: factory,
+    });
+    return this;
+  }
+
+  /**
+   * Bind a scoped instance.
+   * 
+   * @param abstract - The abstract type to bind.
+   * @param factory - The factory function to create the instance.
+   * @returns The DIContainer instance.
+   * 
+   * @example
+   * ```typescript
+   * container.scoped('MyService', () => new MyService());
+   * ```
+   */
+  scoped(abstract: Bindable, factory: Function): this {
+    this.bindings.set(abstract, {
+      factory,
+      lifetime: Lifetime.Scoped,
+      resolver: (container: DIContainer) => {
+        if (container.instances.has(abstract)) {
+          return container.instances.get(abstract);
+        }
+        const instance = factory(container);
+        container.instances.set(abstract, instance);
+        return instance;
+      },
+    });
+    return this;
+  }
+
+  /**
+   * Lazy bind a type to a factory function.
+   * 
+   * @param token - The token to bind.
+   * @param factory - The factory function to create the instance.
+   * 
+   * @example
+   * ```typescript
+   * container.lazyBind('MyService', () => new MyService());
+   * ```
+   */
   lazyBind<T>(token: any, factory: () => T): void {
     this.bind(token, () => {
       const instance = factory();
@@ -259,18 +400,47 @@ export class DIContainer {
     });
   }
 
-  private resolveCircular<T>(token: any): T {
-    const proxy = new Proxy({}, {
-      get: (target, prop) => {
-        const instance = this.resolve<T>(token);
-        return instance[prop as keyof T];
-      }
-    });
-    return proxy as T;
-  }
+  // Middleware Methods
 
+  /**
+   * Use a middleware function.
+   * 
+   * @param middleware - The middleware function to use.
+   * 
+   * @example
+   * ```typescript
+   * container.use(next => {
+   *   console.log('Before');
+   *   const result = next();
+   *   console.log('After');
+   *   return result;
+   * });
+   * ```
+   */
   use(middleware: Middleware): void {
     this.middlewares.push(middleware);
+  }
+
+  // Private Methods
+
+  private resolveWithContext(abstract: Bindable, context: Bindable): any {
+    const contextualBindings = this.contextualBindings.get(context) || [];
+    const binding = contextualBindings.find(b => b.need === abstract);
+    if (binding) {
+      return typeof binding.give === 'function' ? binding.give(this) : binding.give;
+    }
+    return this.resolve(abstract);
+  }
+
+  private build(binding: Binding, context?: Bindable): any {
+    return binding.resolver(this, context);
+  }
+
+  private getAlias(abstract: Bindable): Bindable {
+    if (typeof abstract === 'string' || typeof abstract === 'symbol') {
+      return this.aliases.get(abstract) || abstract;
+    }
+    return abstract;
   }
 
   private applyMiddleware(factory: () => any): any {
@@ -289,23 +459,60 @@ export class DIContainer {
     };
     return dispatch(0);
   }
+
+  // Add this method
+  tagged(tag: string): any[] {
+    const taggedBindables = this.tags.get(tag) || [];
+    return taggedBindables.map(bindable => this.resolve(bindable));
+  }
 }
 
-export class ContextualBindingBuilder {
+/**
+ * Contextual Binding Builder
+ * 
+ * The ContextualBindingBuilder class provides a way to define contextual bindings.
+ */
+class ContextualBindingBuilder implements IContextualBindingBuilder {
   constructor(private container: DIContainer, private concrete: Bindable) {}
 
-  needs(need: Bindable): ContextualBindingNeedsBuilder {
+  /**
+   * Define the dependency that the concrete type needs.
+   * 
+   * @param need - The dependency that the concrete type needs.
+   * @returns A builder for defining the contextual binding.
+   * 
+   * @example
+   * ```typescript
+   * container.when('MyService').needs('Config').give(() => new Config());
+   * ```
+   */
+  needs(need: Bindable): IContextualBindingNeedsBuilder {
     return new ContextualBindingNeedsBuilder(this.container, this.concrete, need);
   }
 }
 
-class ContextualBindingNeedsBuilder {
+/**
+ * Contextual Binding Needs Builder
+ * 
+ * The ContextualBindingNeedsBuilder class provides a way to define the value or factory function for a contextual binding.
+ */
+class ContextualBindingNeedsBuilder implements IContextualBindingNeedsBuilder {
   constructor(
     private container: DIContainer,
     private concrete: Bindable,
     private need: Bindable,
   ) {}
 
+  /**
+   * Define the value or factory function for the contextual binding.
+   * 
+   * @param give - The value or factory function to provide.
+   * 
+   * @example
+   * ```typescript
+   * container.when('MyService').needs('Config').give(() => new Config());
+   * ```
+   */
   give(give: Function | any): void {
     if (!this.container.contextualBindings.has(this.concrete)) {
       this.container.contextualBindings.set(this.concrete, []);
@@ -318,14 +525,27 @@ class ContextualBindingNeedsBuilder {
   }
 }
 
-// Add this interface to define the structure for classes with paramTypes
-interface WithParamTypes {
-  paramTypes?: any[];
-}
-
-export class Observer {
+/**
+ * Observer
+ * 
+ * The Observer class provides a way to implement the observer pattern.
+ */
+export class Observer implements IObserver {
   private listeners: Map<string, Function[]> = new Map();
 
+  /**
+   * Subscribe to an event.
+   * 
+   * @param event - The event to subscribe to.
+   * @param callback - The callback function to call when the event is published.
+   * 
+   * @example
+   * ```typescript
+   * observer.subscribe('myEvent', data => {
+   *   console.log('Event received:', data);
+   * });
+   * ```
+   */
   subscribe(event: string, callback: Function) {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
@@ -333,6 +553,17 @@ export class Observer {
     this.listeners.get(event)!.push(callback);
   }
 
+  /**
+   * Publish an event.
+   * 
+   * @param event - The event to publish.
+   * @param data - Optional data to pass to the event listeners.
+   * 
+   * @example
+   * ```typescript
+   * observer.publish('myEvent', { key: 'value' });
+   * ```
+   */
   publish(event: string, data?: any) {
     const eventListeners = this.listeners.get(event);
     if (eventListeners) {

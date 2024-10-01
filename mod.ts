@@ -422,3 +422,5 @@ export class Container {
     return func(validatedData);
   }
 }
+
+export { DIContainer } from "./dicontainer.ts";

@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+/**
+ * Enum representing the different types of errors that can occur within the container.
+ * Each error type corresponds to a specific issue that may arise during dependency resolution.
+ */
 export enum ContainerErrorType {
     InvalidExtension = "InvalidExtensionError",
     InvalidAlias = "InvalidAliasError",
@@ -12,19 +16,14 @@ export enum ContainerErrorType {
 }
 
 /**
- * Error thrown when trying to extend a binding that doesn't exist.
- * 
- * @example
- * ```typescript
- * const container = new Container();
- * 
- * class Service {}
- * 
- * // This will throw an InvalidExtensionError
- * container.extend(Service, (original: any) => original);
- * ```
+ * Error thrown when an attempt is made to extend a binding that does not exist.
+ * This error indicates that the specified type has not been registered in the container.
  */
 export class InvalidExtensionError extends Error {
+    /**
+     * Creates an instance of InvalidExtensionError.
+     * @param type - The type that was attempted to be extended. This can be a function, a Zod schema, or a string.
+     */
     constructor(type: Function | z.ZodType<any> | string) {
       let typeDescription: string;
 
@@ -40,112 +39,77 @@ export class InvalidExtensionError extends Error {
       this.name = "InvalidExtensionError";
     }
 }
-  
-  /**
-   * Error thrown when trying to resolve an alias that doesn't exist.
-   * 
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * 
-   * // This will throw an InvalidAliasError
-   * container.make('nonexistent-alias');
-   * ```
-   */
-  export class InvalidAliasError extends Error {
+
+/**
+ * Error thrown when an alias is resolved that does not exist.
+ * This error indicates that the specified alias has not been created in the container.
+ */
+export class InvalidAliasError extends Error {
+    /**
+     * Creates an instance of InvalidAliasError.
+     * @param alias - The alias that was attempted to be resolved.
+     */
     constructor(alias: string) {
       super(`No alias found for: ${alias}. Make sure you have created this alias using the 'alias' method.`);
       this.name = "InvalidAliasError";
     }
-  }
-  
-  /**
-   * Error thrown when trying to resolve a tag that doesn't exist or has no bindings.
-   * 
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * 
-   * // This will throw an InvalidTagError
-   * container.tagged('nonexistent-tag');
-   * ```
-   */
-  export class InvalidTagError extends Error {
+}
+
+/**
+ * Error thrown when a tag is resolved that has no associated bindings.
+ * This error indicates that the specified tag has not been used to tag any bindings in the container.
+ */
+export class InvalidTagError extends Error {
+    /**
+     * Creates an instance of InvalidTagError.
+     * @param tag - The tag that was attempted to be resolved.
+     */
     constructor(tag: string) {
       super(`No bindings found for tag: '${tag}'. Make sure you have tagged some bindings with this tag using the 'tag' method.`);
       this.name = "InvalidTagError";
     }
-  }
-  
-  /**
-   * Error thrown when a contextual binding is invalid or undefined.
-   * 
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * 
-   * class Service {
-   *   static paramTypes = ['config'];
-   *   constructor(public config: any) {}
-   * }
-   * 
-   * container.when(Service).needs('config').give(undefined as any);
-   * 
-   * // This will throw an InvalidContextualBindingError
-   * container.createInstance(Service);
-   * ```
-   */
-  export class InvalidContextualBindingError extends Error {
+}
+
+/**
+ * Error thrown when a contextual binding is invalid or undefined.
+ * This error indicates that the specified service or dependency is not properly defined.
+ */
+export class InvalidContextualBindingError extends Error {
+    /**
+     * Creates an instance of InvalidContextualBindingError.
+     * @param serviceName - The name of the service for which the contextual binding is invalid.
+     * @param dependencyName - The name of the dependency that is undefined.
+     */
     constructor(serviceName: string, dependencyName: string) {
       super(`Invalid contextual binding for ${serviceName}: '${dependencyName}' is undefined. Ensure that you're providing a valid value or factory function for the contextual binding.`);
       this.name = "InvalidContextualBindingError";
     }
-  }
-  
-  /**
-   * Error thrown when a circular dependency is detected.
-   * 
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * 
-   * class A {
-   *   static paramTypes = [new TypeWrapper(z.unknown(), Symbol('B'))];
-   *   constructor(public b: B) {}
-   * }
-   * 
-   * class B {
-   *   static paramTypes = [new TypeWrapper(z.unknown(), Symbol('A'))];
-   *   constructor(public a: A) {}
-   * }
-   * 
-   * container.register(A);
-   * container.register(B);
-   * 
-   * // This will throw a CircularDependencyError
-   * container.createInstance(A);
-   * ```
-   */
-  export class CircularDependencyError extends Error {
+}
+
+/**
+ * Error thrown when a circular dependency is detected.
+ * This error indicates that the dependency resolution process has encountered a loop.
+ */
+export class CircularDependencyError extends Error {
+    /**
+     * Creates an instance of CircularDependencyError.
+     * @param dependencyChain - An array representing the chain of dependencies that led to the circular reference.
+     */
     constructor(dependencyChain: string[]) {
       super(`Circular dependency detected: ${dependencyChain.join(" -> ")}. Break the circular dependency by redesigning your classes or using a factory function.`);
       this.name = "CircularDependencyError";
     }
-  }
-  
-  /**
-   * Error thrown when trying to resolve a dependency that hasn't been bound to the container.
-   * 
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * const UnregisteredType = new TypeWrapper(z.unknown(), Symbol('Unregistered'));
-   * 
-   * // This will throw an UnresolvedDependencyError
-   * container.resolve(UnregisteredType);
-   * ```
-   */
-  export class UnresolvedDependencyError extends Error {
+}
+
+/**
+ * Error thrown when a dependency cannot be resolved because it has not been bound.
+ * This error indicates that the specified type has not been registered in the container.
+ */
+export class UnresolvedDependencyError extends Error {
+    /**
+     * Creates an instance of UnresolvedDependencyError.
+     * @param type - The type that could not be resolved. This can be a function, string, symbol, or object.
+     */
     constructor(type: Function | string | symbol | object) {
       let typeName: string;
       if (typeof type === 'function') {
@@ -160,23 +124,19 @@ export class InvalidExtensionError extends Error {
       super(`No binding found for the given type: ${typeName}`);
       this.name = "UnresolvedDependencyError";
     }
-  }
-  
-  /**
-   * Error thrown when a resolved value doesn't match the expected type.
-   * 
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * const StringType = new TypeWrapper(z.string(), Symbol('string'));
-   * 
-   * container.bind(StringType, () => 42 as any);
-   * 
-   * // This will throw an InvalidTypeError
-   * container.resolve(StringType);
-   * ```
-   */
-  export class InvalidTypeError extends Error {
+}
+
+/**
+ * Error thrown when the resolved value does not match the expected type.
+ * This error provides details about the expected and received types.
+ */
+export class InvalidTypeError extends Error {
+    /**
+     * Creates an instance of InvalidTypeError.
+     * @param expected - The expected type as a string.
+     * @param received - The actual type received as a string.
+     * @param details - Additional details about the error.
+     */
     constructor(expected: string, received: string, details: string) {
       super(`Expected ${expected.toLowerCase()}, received ${received}. ${details}`);
       this.name = "InvalidTypeError";
@@ -184,22 +144,14 @@ export class InvalidExtensionError extends Error {
 }
 
 /**
- * Error thrown when a schema is invalid.
- * 
- * @example
- * ```typescript
- * const container = new Container();
- * 
- * const schema = z.object({
- *   name: z.string(),
- *   age: z.number().optional()
- * });
- * 
- * // This will throw an InvalidSchemaError
- * container.bind(schema, () => ({ name: 'John', age: 30 }));
- * ```
- */ 
+ * Error thrown when a resolved instance does not match the Zod schema.
+ * This error indicates that the validation against the schema has failed.
+ */
 export class InvalidSchemaError extends Error {
+    /**
+     * Creates an instance of InvalidSchemaError.
+     * @param message - The error message describing the schema validation failure.
+     */
     constructor(message: string) {
       super(message);
       this.name = 'InvalidSchemaError';

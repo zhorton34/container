@@ -15,5 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Run tests
+        run: deno test
+
       - name: Publish package
-        run: npx jsr publish
+        run: npx jsr publish --allow-slow-types

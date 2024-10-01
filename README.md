@@ -1,11 +1,14 @@
-# @Findhow/Container (Dependency Injection (DI) Container)
+# @findhow/container 
+
+> 🚀 Unleash the Power of TypeScript Dependency Injection with @Findhow/Container 🔥
+
 
 A TypeScript-based Dependency Injection (DI) container with support for various
 binding types (singleton, transient, scoped), contextual bindings, middleware,
 circular dependency detection, and Zod schema validation for runtime type
 safety.
 
-## @Findhow/Container Comparison to other Popular DI Containers
+## @Findhow/Container compared
 
 | Feature                              | @findhow/container | Inversify | NestJS    | TypeDI | TSyringe |
 | ------------------------------------ | ------------------- | --------- | --------- | ------ | -------- |
@@ -401,3 +404,6 @@ This DI container provides a flexible and feature-rich solution for managing
 dependencies in TypeScript applications. With support for various binding types,
 contextual bindings, middleware, and Zod schema validation, it offers powerful
 tools for building scalable and maintainable applications.
+
+
+[Clean Code Studio](https://cleancode.studio)

@@ -12,7 +12,7 @@ safety.
 | **TypeScript Support**               | ✅                  | ✅        | ✅        | ✅     | ✅       |
 | **Does not Need Decorator-based DI** | ✅                  | ❌        | ❌        | ❌     | ❌       |
 | **Constructor Injection**            | ✅                  | ✅        | ✅        | ✅     | ✅       |
-| **Property Injection**               | ✅ (Manual)         | ✅        | ✅        | ✅     | ✅       |
+| **Property Injection**               | ✅                  | ✅        | ✅        | ✅     | ✅       |
 | **Method Injection**                 | ✅                  | ✅        | ✅        | ✅     | ✅       |
 | **Circular Dependency Detection**    | ✅                  | ✅        | ✅        | ✅     | ✅       |
 | **Lazy Injection**                   | ✅                  | ✅        | ✅        | ✅     | ❌       |

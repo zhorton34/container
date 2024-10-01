@@ -1,4 +1,4 @@
-import { DIContainer } from "../../mod.ts";
+import { DIContainer } from "../mod.ts";
 
 const container = new DIContainer();
 

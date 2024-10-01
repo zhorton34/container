@@ -24,6 +24,22 @@ safety.
 | **Zod Schema Validation**            | ✅                  | ❌        | ❌        | ❌     | ❌       |
 | **Framework Integration**            | ❌                  | ❌        | ✅ (Full) | ❌     | ❌       |
 
+## Examples
+
+See the [examples](./examples) directory for more usage examples.
+
+| Example                                                                                  | Description                                                                                                      |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| [Circular Dependency Detection](./examples/circular-dependency-detection.ts)             | Demonstrates how to handle circular dependencies in a DI container.                                              |
+| [Scoped Binding](./examples/scoped-binding.ts)                                           | Shows how to create scoped instances of services in a DI container.                                              |
+| [Middleware](./examples/middleware.ts)                                                   | Illustrates the use of middleware to log dependency resolutions.                                                 |
+| [Dependency Injection with Interface](./examples/dependency-injection-with-interface.ts) | Example of binding and resolving services using interfaces for payment processing.                               |
+| [Basic Usage](./examples/basic-usage.ts)                                                 | A simple example of creating a DI container and binding a service.                                               |
+| [Async Binding](./examples/async-binding.ts)                                             | Demonstrates how to resolve dependencies that require asynchronous initialization.                               |
+| [Contextual Bindings](./examples/contextual-bindings.ts)                                 | Shows how to bind different values depending on the context.                                                     |
+| [Singleton Binding](./examples/singleton-binding.ts)                                     | Illustrates how to bind a service as a singleton, ensuring a single instance is used throughout the application. |
+| [Transient Binding](./examples/transient-binding.ts)                                     | Demonstrates how to bind a service as transient, creating a new instance each time it is resolved.               |
+
 ## Features
 
 - **Singleton, Transient, and Scoped Bindings**: Control the lifecycle of your

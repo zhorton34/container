@@ -1,6 +1,11 @@
 {
   "name": "@findhow/container",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "A dependency injection container for Typescript (no decorators needed, zod schema powered runtime type checking)",
+  "license": "MIT",
+  "repository": "https://github.com/zhorton34/container",
+  "homepage": "https://github.com/zhorton34/container",
+  "bugs": "https://github.com/zhorton34/container/issues",
   "tasks": {
     "test": "deno test --allow-all"
   },

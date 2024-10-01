@@ -28,7 +28,7 @@ export class Container implements IContainer {
   private instances = new Map<Bindable, any>();
   private aliases: Map<string | symbol, Bindable> = new Map();
   private tags = new Map<string, Bindable[]>();
-  public contextualBindings = new Map<Bindable, ContextualBinding[]>();
+  public contextualBindings: Map<Bindable, ContextualBinding[]> = new Map<Bindable, ContextualBinding[]>();
   private resolvingStack: Bindable[] = [];
   private parent: Container | null = null;
   private children: Container[] = [];

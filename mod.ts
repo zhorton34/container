@@ -423,4 +423,5 @@ export class Container {
   }
 }
 
+export { z };
 export { DIContainer } from "./dicontainer.ts";

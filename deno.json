@@ -10,7 +10,7 @@
     "test": "deno test --allow-all"
   },
   "imports": {
-    "zod": "https://deno.land/x/zod@v3.21.4/mod.ts",
+    "zod": "npm:zod@3.21.4",
     "@std/": "jsr:@std/",
     "@std/async": "jsr:@std/async",
     "@std/assert": "jsr:@std/assert",

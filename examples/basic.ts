@@ -8,7 +8,7 @@ container.bind("logger", () => {
   };
 });
 
-container.bind("service", (c: DIContainer) => {
+container.bind("service", (c: Container) => {
   return {
     log: (message: string) => c.resolve("logger").log(message),
   };

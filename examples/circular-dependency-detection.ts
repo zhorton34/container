@@ -11,8 +11,8 @@ class ServiceB {
 }
 
 // Circular binding
-container.bind(ServiceA, (c: DIContainer) => new ServiceA(c.resolve(ServiceB)));
-container.bind(ServiceB, (c: DIContainer) => new ServiceB(c.resolve(ServiceA)));
+container.bind(ServiceA, (c: Container) => new ServiceA(c.resolve(ServiceB)));
+container.bind(ServiceB, (c: Container) => new ServiceB(c.resolve(ServiceA)));
 
 // Attempting to resolve will throw CircularDependencyError
 try {

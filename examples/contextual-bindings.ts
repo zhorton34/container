@@ -17,7 +17,7 @@ class Service {
 }
 
 // Bind the service
-container.bind(Service, (c: DIContainer) => new Service(c.resolve("config", "service")));
+container.bind(Service, (c: Container) => new Service(c.resolve("config", "service")));
 
 // Resolve the service and log the environment
 const service = container.resolve(Service);

@@ -96,14 +96,14 @@ export type Middleware = (next: () => any) => any;
 /**
  * Interface for the Dependency Injection Container.
  */
-export interface IDIContainer {
+export interface IContainer {
   /**
    * Bind a type to a factory function.
    * 
    * @param abstract - The abstract type to bind.
    * @param factory - The factory function to create the instance.
    * @param schema - Optional Zod schema for validation.
-   * @returns The DIContainer instance.
+   * @returns The IContainer instance.
    */
   bind(abstract: Bindable, factory: Function, schema?: z.ZodType<any>): this;
 
@@ -112,7 +112,7 @@ export interface IDIContainer {
    * 
    * @param abstract - The abstract type to bind.
    * @param factory - The factory function to create the instance.
-   * @returns The DIContainer instance.
+   * @returns The IContainer instance.
    */
   singleton(abstract: Bindable, factory: Function): this;
 
@@ -121,7 +121,7 @@ export interface IDIContainer {
    * 
    * @param abstract - The abstract type to bind.
    * @param instance - The instance to bind.
-   * @returns The DIContainer instance.
+   * @returns The IContainer instance.
    */
   instance(abstract: Bindable, instance: any): this;
 
@@ -138,7 +138,7 @@ export interface IDIContainer {
    * 
    * @param abstracts - The abstracts to tag.
    * @param tag - The tag to assign.
-   * @returns The DIContainer instance.
+   * @returns The IContainer instance.
    */
   tag(abstracts: Bindable[], tag: string): this;
 
@@ -173,7 +173,7 @@ export interface IDIContainer {
    * 
    * @param abstract - The abstract type to bind.
    * @param factory - The factory function to create the instance.
-   * @returns The DIContainer instance.
+   * @returns The IContainer instance.
    */
   transient(abstract: Bindable, factory: Function): this;
 
@@ -182,16 +182,16 @@ export interface IDIContainer {
    * 
    * @param abstract - The abstract type to bind.
    * @param factory - The factory function to create the instance.
-   * @returns The DIContainer instance.
+   * @returns The IContainer instance.
    */
   scoped(abstract: Bindable, factory: Function): this;
 
   /**
    * Create a new scope.
    * 
-   * @returns A new DIContainer instance representing the scope.
+   * @returns A new IContainer instance representing the scope.
    */
-  createScope(): IDIContainer;
+  createScope(): IContainer;
 
   /**
    * Dispose of the container and its bindings.
@@ -201,9 +201,9 @@ export interface IDIContainer {
   /**
    * Create a child container.
    * 
-   * @returns A new DIContainer instance representing the child container.
+   * @returns A new IContainer instance representing the child container.
    */
-  createChild(): IDIContainer;
+  createChild(): IContainer;
 
   /**
    * Lazy bind a type to a factory function.

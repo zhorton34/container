@@ -1,6 +1,6 @@
-import { DIContainer } from "../mod.ts";
+import { Container } from "../mod.ts";
 
-const container = new DIContainer();
+const container = new Container();
 
 class ConfigService {
   private config = { app: "MyApp", version: "1.0.0" };

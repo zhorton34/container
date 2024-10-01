@@ -1,6 +1,6 @@
-import { DIContainer } from "../mod.ts";
+import { Container } from "../mod.ts";
 
-const container = new DIContainer();
+const container = new Container();
 
 class AsyncService {
   async getValue() {

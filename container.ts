@@ -1,635 +1,573 @@
-import { Container as FindHowContainer, type Bindable, type Constructor } from "./mod.ts";
-import { InvalidTagError } from "./errors.ts";
-
-type Abstract = Bindable;
-
-/**
- * Interface for defining contextual bindings in the container.
- * This allows you to define what a concrete type should be given when a specific abstract type is needed.
- */
-export interface ContextualBindingBuilder {
-  needs(abstract: Abstract): this;
-  give(implementation: (() => any) | Abstract): void;
-  giveTagged(tag: string): void;
-  giveConfig(key: string, defaultValue?: any): void;
-}
-
-/**
- * Interface representing a Laravel-style container.
- */
-export interface LaravelContainer {
-  bound(abstract: Abstract): boolean;
-  alias(abstract: Abstract, alias: string): void;
-  tag(abstracts: Abstract | Abstract[], tags: string | string[]): void;
-  tagged(tag: string): any[];
-  bind(abstract: Abstract, concrete?: Function | Abstract, shared?: boolean): void;
-  bindMethod(method: string | [string, string], callback: Function): void;
-  bindIf(abstract: Abstract, concrete?: Function | Abstract, shared?: boolean): void;
-  singleton(abstract: Abstract, concrete?: Function | Abstract): void;
-  singletonIf(abstract: Abstract, concrete?: Function | Abstract): void;
-  scoped(abstract: Abstract, concrete?: Function | Abstract): void;
-  scopedIf(abstract: Abstract, concrete?: Function | Abstract): void;
-  extend(abstract: Abstract, closure: Function): void;
-  instance(abstract: Abstract, instance: any): void;
-  addContextualBinding(concrete: Abstract, abstract: Abstract, implementation: Function | Abstract): void;
-  when(concrete: Abstract): ContextualBindingBuilder;
-  factory(abstract: Abstract): Function;
-  flush(): void;
-  make(abstract: Abstract, parameters?: any[]): any;
-  call(callback: Function | string, parameters?: any[], defaultMethod?: string): any;
-  resolved(abstract: Abstract): boolean;
-  beforeResolving(abstract: Abstract | Function, callback?: Function): void;
-  resolving(abstract: Abstract | Function, callback?: Function): void;
-  afterResolving(abstract: Abstract | Function, callback?: Function): void;
-  register<T>(constructor: Constructor<T>, paramTypes: (Bindable | Bindable[])[]): void;
-}
+import { z } from 'zod';
+import { 
+  InvalidSchemaError, 
+  CircularDependencyError, 
+  UnresolvedDependencyError 
+} from './errors.ts';
+import { 
+  Bindable, 
+  Binding, 
+  ContextualBinding, 
+  Middleware, 
+  WithParamTypes, 
+  IContainer, 
+  IContextualBindingBuilder, 
+  IContextualBindingNeedsBuilder, 
+  IObserver,
+  Lifetime, // Import Lifetime enum directly
+} from './types.ts';
 
 /**
- * The Container class implements the LaravelContainer interface and provides
- * a dependency injection container for managing class dependencies and performing
- * dependency injection.
+ * Dependency Injection Container
+ * 
+ * The Container class provides a way to manage dependencies and their lifecycles.
+ * It supports various binding types, contextual bindings, and middleware.
  */
-export class Container implements LaravelContainer {
-  private container: FindHowContainer;
-  private beforeResolvingCallbacks = new Map<Bindable, Function[]>();
-  private resolvingCallbacks = new Map<Bindable, Function[]>();
-  private afterResolvingCallbacks = new Map<Bindable, Function[]>();
-  private tags = new Map<string, Abstract[]>();
+export class Container implements IContainer {
+  private bindings = new Map<Bindable, Binding>();
+  private instances = new Map<Bindable, any>();
+  private aliases: Map<string | symbol, Bindable> = new Map();
+  private tags = new Map<string, Bindable[]>();
+  public contextualBindings = new Map<Bindable, ContextualBinding[]>();
+  private resolvingStack: Bindable[] = [];
+  private parent: Container | null = null;
+  private children: Container[] = [];
+  private middlewares: Middleware[] = [];
 
-  constructor() {
-    this.container = new FindHowContainer();
-  }
-
-  /**
-   * Determine if the given abstract type has been bound.
-   *
-   * @param {Abstract} abstract - The abstract type to check.
-   * @returns {boolean} True if the abstract type is bound, false otherwise.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * container.bind('logger', () => new Logger());
-   * console.log(container.bound('logger')); // true
-   * console.log(container.bound('database')); // false
-   * ```
-   */
-  bound(abstract: Abstract): boolean {
-    return this.container.bindings.has(abstract) || this.container.aliases.has(abstract as string);
-  }
+  // Binding Methods
 
   /**
-   * Alias a type to a different name.
-   *
-   * @param {Abstract} abstract - The abstract type to alias.
-   * @param {string} alias - The alias name.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * container.bind('logger', () => new Logger());
-   * container.alias('logger', 'log');
-   * const logger = container.make('log');
-   * ```
-   */
-  alias(abstract: Abstract, alias: string): void {
-    this.container.alias(alias, abstract);
-  }
-
-  /**
-   * Register a class and its dependencies with the container.
-   *
-   * @param {Constructor<T>} constructor - The class constructor to register.
-   * @param {(Bindable | Bindable[])[]} paramTypes - The parameter types for the constructor.
-   *
-   * @example
-   * ```typescript
-   * class UserService {
-   *   constructor(private logger: Logger) {}
-   * }
+   * Bind a type to a factory function.
    * 
-   * const container = new Container();
-   * container.register(UserService, [Logger]);
-   * ```
-   */
-  register<T>(constructor: Constructor<T>, paramTypes: (Bindable | Bindable[])[]): void {
-    this.container.register(constructor, paramTypes);
-  }
-
-  /**
-   * Assign a set of tags to a given abstract type(s).
-   *
-   * @param {Abstract | Abstract[]} abstracts - The abstract type(s) to tag.
-   * @param {string | string[]} tags - The tag(s) to assign.
-   *
+   * @param abstract - The abstract type to bind.
+   * @param factory - The factory function to create the instance.
+   * @param schema - Optional Zod schema for validation.
+   * @returns The Container instance.
+   * 
    * @example
    * ```typescript
-   * const container = new Container();
-   * container.bind('report', () => new Report());
-   * container.bind('logger', () => new Logger());
-   * container.tag(['report', 'logger'], 'services');
+   * container.bind('MyService', () => new MyService());
    * ```
    */
-  tag(abstracts: Abstract | Abstract[], tags: string | string[]): void {
-    const abstractsArray = Array.isArray(abstracts) ? abstracts : [abstracts];
-    const tagsArray = Array.isArray(tags) ? tags : [tags];
-    for (const tag of tagsArray) {
-      if (!this.tags.has(tag)) {
-        this.tags.set(tag, []);
-      }
-      this.tags.get(tag)!.push(...abstractsArray);
-    }
-    this.container.tag(abstractsArray, tagsArray[0]);
-  }
-
-  /**
-   * Resolve all of the bindings for a given tag.
-   *
-   * @param {string} tag - The tag to resolve.
-   * @returns {any[]} An array of resolved bindings.
-   * @throws {InvalidTagError} If no bindings are found for the given tag.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * container.bind('report', () => new Report());
-   * container.bind('logger', () => new Logger());
-   * container.tag(['report', 'logger'], 'services');
-   * 
-   * const services = container.tagged('services');
-   * // services will be an array containing instances of Report and Logger
-   * ```
-   */
-  tagged(tag: string): any[] {
-    const bindings = this.tags.get(tag) || [];
-    if (bindings.length === 0) {
-      throw new InvalidTagError(`No bindings found for tag: '${tag}'`);
-    }
-    return bindings.map(binding => this.make(binding));
-  }
-
-  /**
-   * Register a binding with the container.
-   *
-   * @param {Abstract} abstract - The abstract type to bind.
-   * @param {Function | Abstract} [concrete] - The concrete implementation.
-   * @param {boolean} [shared=false] - Whether the binding should be shared.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * 
-   * // Binding a class
-   * container.bind('logger', Logger);
-   * 
-   * // Binding a factory function
-   * container.bind('database', () => new Database());
-   * 
-   * // Binding a shared instance
-   * container.bind('config', Config, true);
-   * ```
-   */
-  bind(abstract: Abstract, concrete: Function | Abstract = abstract, shared = false): void {
-    if (shared) {
-      this.singleton(abstract, concrete);
-    } else {
-      this.container.bind(abstract, () => {
-        if (typeof concrete === "function" && concrete.prototype) {
-          return new (concrete as Constructor<any>)();
+  bind(abstract: Bindable, factory: Function, schema?: z.ZodType<any>): this {
+    if (schema) {
+      try {
+        const instance = factory(this);
+        schema.parse(instance);
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          throw new InvalidSchemaError(`Invalid schema for ${String(abstract)}: ${error.message}`);
         }
-        return typeof concrete === "function" ? concrete : () => concrete;
-      });
-    }
-  }
-
-  bindMethod(method: string | [string, string], callback: Function): void {
-    const [className, methodName] = Array.isArray(method) ? method : method.split("@");
-    this.container.bind(`${className}@${methodName}`, () => callback);
-  }
-
-  bindIf(abstract: Abstract, concrete: Function | Abstract = abstract, shared = false): void {
-    if (!this.bound(abstract)) {
-      this.bind(abstract, concrete, shared);
-    }
-  }
-
-  /**
-   * Register a shared binding in the container.
-   *
-   * @param {Abstract} abstract - The abstract type to bind.
-   * @param {Function | Abstract} [concrete] - The concrete implementation.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * 
-   * // Binding a shared instance
-   * container.singleton('database', Database);
-   * 
-   * // The same instance will be returned each time
-   * const db1 = container.make('database');
-   * const db2 = container.make('database');
-   * console.log(db1 === db2); // true
-   * ```
-   */
-  singleton(abstract: Abstract, concrete: Function | Abstract = abstract): void {
-    this.container.bindSingleton(abstract, () => {
-      if (typeof concrete === "function" && concrete.prototype) {
-        return new (concrete as Constructor<any>)();
+        throw error;
       }
-      return typeof concrete === "function" ? concrete : () => concrete;
+    }
+    this.bindings.set(abstract, {
+      factory,
+      lifetime: Lifetime.Transient, // Use Lifetime.Transient as default
+      resolver: (container: Container) => factory(container),
     });
-  }
-
-  /**
-   * Register a shared binding if it hasn't already been registered.
-   *
-   * @param {Abstract} abstract - The abstract type to bind.
-   * @param {Function | Abstract} [concrete] - The concrete implementation.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * 
-   * // This will bind Config as a singleton
-   * container.singletonIf('config', Config);
-   * 
-   * // This will not override the existing binding
-   * container.singletonIf('config', DifferentConfig);
-   * ```
-   */
-  singletonIf(abstract: Abstract, concrete: Function | Abstract = abstract): void {
-    if (!this.bound(abstract)) {
-      this.singleton(abstract, concrete);
-    }
-  }
-
-  /**
-   * Register a scoped binding in the container.
-   *
-   * @param {Abstract} abstract - The abstract type to bind.
-   * @param {Function | Abstract} [concrete] - The concrete implementation.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * 
-   * // Binding a scoped instance
-   * container.scoped('request', Request);
-   * ```
-   */
-  scoped(abstract: Abstract, concrete: Function | Abstract = abstract): void {
-    this.bind(abstract, concrete);
-  }
-
-  /**
-   * Register a scoped binding if it hasn't already been registered.
-   *
-   * @param {Abstract} abstract - The abstract type to bind.
-   * @param {Function | Abstract} [concrete] - The concrete implementation.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * 
-   * // This will bind Request as a scoped instance
-   * container.scopedIf('request', Request);
-   * 
-   * // This will not override the existing binding
-   * container.scopedIf('request', DifferentRequest);
-   * ```
-   */
-  scopedIf(abstract: Abstract, concrete: Function | Abstract = abstract): void {
-    if (!this.bound(abstract)) {
-      this.scoped(abstract, concrete);
-    }
-  }
-
-  /**
-   * Extend an abstract type in the container.
-   *
-   * @param {Abstract} abstract - The abstract type to extend.
-   * @param {Function} closure - The closure to run when the abstract is resolved.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * container.bind('logger', () => new Logger());
-   * 
-   * container.extend('logger', (logger) => {
-   *   logger.level = 'debug';
-   *   return logger;
-   * });
-   * 
-   * const logger = container.make('logger');
-   * console.log(logger.level); // 'debug'
-   * ```
-   */
-  extend(abstract: Abstract, closure: Function): void {
-    this.container.extend(abstract, (original: unknown) => closure(original));
-  }
-
-  /**
-   * Register an existing instance as shared in the container.
-   *
-   * @param {Abstract} abstract - The abstract type to bind.
-   * @param {any} instance - The instance to register.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * const config = new Config();
-   * 
-   * container.instance('config', config);
-   * 
-   * const resolvedConfig = container.make('config');
-   * console.log(resolvedConfig === config); // true
-   * ```
-   */
-  instance(abstract: Abstract, instance: any): void {
-    this.container.instance(abstract, instance);
-  }
-
-  /**
-   * Add a contextual binding to the container.
-   *
-   * @param {Abstract} concrete - The concrete type.
-   * @param {Abstract} abstract - The abstract type.
-   * @param {Function | Abstract} implementation - The implementation.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * 
-   * container.addContextualBinding(UserController, Logger, FileLogger);
-   * ```
-   */
-  addContextualBinding(concrete: Abstract, abstract: Abstract, implementation: Function | Abstract): void {
-    this.container.when(concrete as Constructor<any>).needs(abstract as Constructor<any>).give(implementation);
-  }
-
-  /**
-   * Define a contextual binding.
-   *
-   * @param {Abstract} concrete - The concrete type.
-   * @returns {ContextualBindingBuilder} A contextual binding builder instance.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * 
-   * container.when(UserController)
-   *   .needs(Logger)
-   *   .give(FileLogger);
-   * ```
-   */
-  when(concrete: Abstract): ContextualBindingBuilder {
-    return new ContextualBindingBuilderImpl(concrete, this.container);
-  }
-
-  /**
-   * Get a closure to resolve the given type from the container.
-   *
-   * @param {Abstract} abstract - The abstract type to resolve.
-   * @returns {Function} A closure that resolves the abstract type.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * container.bind('logger', () => new Logger());
-   * 
-   * const loggerFactory = container.factory('logger');
-   * const logger1 = loggerFactory();
-   * const logger2 = loggerFactory();
-   * console.log(logger1 !== logger2); // true
-   * ```
-   */
-  factory(abstract: Abstract): Function {
-    return () => this.make(abstract);
-  }
-
-  /**
-   * Flush all of the container's bindings.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * container.bind('logger', () => new Logger());
-   * 
-   * container.flush();
-   * 
-   * console.log(container.bound('logger')); // false
-   * ```
-   */
-  flush(): void {
-    this.container = new FindHowContainer();
-  }
-
-  /**
-   * Resolve the given type from the container.
-   *
-   * @param {Abstract} abstract - The abstract type to resolve.
-   * @param {Bindable[]} [parameters=[]] - Optional parameters to pass to the resolver.
-   * @returns {any} The resolved instance.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * container.bind('logger', () => new Logger());
-   * 
-   * const logger = container.make('logger');
-   * ```
-   */
-  make(abstract: Abstract, parameters: Bindable[] = []): any {
-    if (this.container.aliases.has(abstract as string)) {
-      abstract = this.container.aliases.get(abstract as string) as Abstract;
-    }
-    this.runBeforeResolvingCallbacks(abstract);
-    const resolved = this.container.resolve(abstract);
-    this.runResolvingCallbacks(abstract, resolved);
-    this.runAfterResolvingCallbacks(abstract, resolved);
-    
-    if (resolved && (resolved as any).constructor && (resolved as any).constructor.paramTypes) {
-      const paramTypes = (resolved as any).constructor.paramTypes;
-      const dependencies = paramTypes.map((param: Abstract) => this.make(param));
-      return new (resolved as any).constructor(...dependencies);
-    }
-    
-    return typeof resolved === "function" 
-    ? resolved(...[parameters.map(p => this.bound(p) ? this.make(p) : p)]) 
-    : resolved;
-  }
-
-  /**
-   * Call the given function / class method and inject its dependencies.
-   *
-   * @param {Function | string} callback - The function or class method to call.
-   * @param {Bindable[]} [parameters=[]] - Optional parameters to pass to the callback.
-   * @param {string} [defaultMethod] - The default method to call if not specified.
-   * @returns {any} The result of the function call.
-   *
-   * @example
-   * ```typescript
-   * const container = new Container();
-   * container.bind('logger', () => new Logger());
-   * 
-   * function doSomething(logger) {
-   *   logger.log('Something happened');
-   * }
-   * 
-   * container.call(doSomething);
-   * 
-   * // Or with a class method
-   * container.call('UserController@index');
-   * ```
-   */
-  call(callback: Function | string, parameters: Bindable[] = [], defaultMethod?: string): any {
-    if (typeof callback === "string") {
-      const [className, methodName] = callback.split("@");
-      const instance = this.make(className);
-      return (instance as any)[methodName](...[parameters.map(p => this.bound(p) ? this.make(p) : p)]);
-    } else {
-      return callback(...[parameters.map(p => this.bound(p) ? this.make(p) : p)]);
-    }
-  }
-
-  resolved(abstract: Abstract): boolean {
-    return this.bound(abstract);
-  }
-
-  beforeResolving(abstract: Bindable, callback: Function): void {
-    this.addCallbackToMap(this.beforeResolvingCallbacks, abstract, callback);
-  }
-
-  resolving(abstract: Bindable, callback: Function): void {
-    this.addCallbackToMap(this.resolvingCallbacks, abstract, callback);
-  }
-
-  afterResolving(abstract: Bindable, callback: Function): void {
-    this.addCallbackToMap(this.afterResolvingCallbacks, abstract, callback);
-  }
-
-  private addCallbackToMap(map: Map<Bindable, Function[]>, abstract: Bindable, callback: Function): void {
-    if (!map.has(abstract)) {
-      map.set(abstract, []);
-    }
-    map.get(abstract)!.push(callback);
-  }
-
-  private runBeforeResolvingCallbacks(abstract: Abstract): void {
-    this.runCallbacks(this.beforeResolvingCallbacks, abstract);
-  }
-
-  private runResolvingCallbacks(abstract: Abstract, instance: any): void {
-    this.runCallbacks(this.resolvingCallbacks, abstract, instance);
-  }
-
-  private runAfterResolvingCallbacks(abstract: Abstract, instance: any): void {
-    this.runCallbacks(this.afterResolvingCallbacks, abstract, instance);
-  }
-
-  private runCallbacks(map: Map<Bindable, Function[]>, abstract: Abstract, instance?: any): void {
-    const callbacks = map.get(abstract) || [];
-    for (const callback of callbacks) {
-      callback(instance);
-    }
-  }
-
-  createInstance<T>(constructor: new (...args: any[]) => T): T {
-    const paramTypes = (constructor as any).paramTypes || [];
-    const resolvedDependencies = paramTypes.map((type: any) => this.make(type));
-    return new constructor(...resolvedDependencies);
-  }
-
-  private resolve(abstract: Abstract): any {
-    return this.make(abstract);
-  }
-}
-
-/**
- * The ContextualBindingBuilderImpl class implements the ContextualBindingBuilder interface
- * and provides methods for defining contextual bindings.
- */
-class ContextualBindingBuilderImpl implements ContextualBindingBuilder {
-  private concrete: Abstract;
-  private container: FindHowContainer;
-  private abstract?: Abstract; // Make the property optional
-
-  constructor(concrete: Abstract, container: FindHowContainer) {
-    this.concrete = concrete;
-    this.container = container;
-  }
-
-  /**
-   * Specifies the abstract type that the concrete type needs.
-   * This method is part of the fluent interface for defining contextual bindings.
-   * 
-   * @param {Abstract} abstract - The abstract type that the concrete type needs.
-   * @returns {this} The current instance for method chaining.
-   * 
-   * @example
-   * ```typescript
-   * container.when(PhotoController).needs(Filesystem).give(() => new LocalFilesystem());
-   * ```
-   */
-  needs(abstract: Abstract): this {
-    this.abstract = abstract;
-    this.container.when(this.concrete as Constructor<any>).needs(abstract as Constructor<any>);
     return this;
   }
 
   /**
-   * Specifies the implementation to be given when the concrete type needs the abstract type.
+   * Bind a singleton.
    * 
-   * @param {((): any) | Abstract} implementation - The implementation to be given. Can be a factory function or an abstract type.
+   * @param abstract - The abstract type to bind.
+   * @param factory - The factory function to create the instance.
+   * @returns The Container instance.
    * 
    * @example
    * ```typescript
-   * container.when(PhotoController).needs(Filesystem).give(() => new S3Filesystem());
-   * // Or
-   * container.when(PhotoController).needs(Filesystem).give(LocalFilesystem);
+   * container.singleton('MySingletonService', () => new MySingletonService());
    * ```
    */
-  give(implementation: (() => any) | Abstract): void {
-    this.container.when(this.concrete as Constructor<any>).needs(this.abstract as Constructor<any>).give(implementation);
-    this.abstract = null!;
+  singleton(abstract: Bindable, factory: Function): this {
+    this.bindings.set(abstract, {
+      factory,
+      lifetime: Lifetime.Singleton,
+      resolver: factory,
+    });
+    return this;
   }
 
   /**
-   * Specifies that all services tagged with the given tag should be given when the concrete type needs the abstract type.
+   * Bind an instance.
    * 
-   * @param {string} tag - The tag used to identify the services.
+   * @param abstract - The abstract type to bind.
+   * @param instance - The instance to bind.
+   * @returns The Container instance.
    * 
    * @example
    * ```typescript
-   * container.tag(['PDFReport', 'CSVReport'], 'reports');
-   * container.when(ReportManager).needs('reports').giveTagged('reports');
+   * container.instance('MyInstance', new MyInstance());
    * ```
    */
-  giveTagged(tag: string): void {
-    const services = this.container.tagged(tag);
-    this.container.when(this.concrete as Constructor<any>).needs(tag as any).give(() => services);
+  instance(abstract: Bindable, instance: any): this {
+    this.instances.set(abstract, instance);
+    return this;
   }
 
   /**
-   * Specifies that a configuration value should be given when the concrete type needs the abstract type.
+   * Alias an abstract type.
    * 
-   * @param {string} key - The configuration key.
-   * @param {any} [defaultValue=null] - The default value to use if the configuration key is not found.
+   * @param alias - The alias to create.
+   * @param abstract - The abstract type to alias.
    * 
    * @example
    * ```typescript
-   * container.when(DatabaseConnection).needs('db.host').giveConfig('database.host', 'localhost');
+   * container.alias('Logger', 'ConsoleLogger');
    * ```
    */
-  giveConfig(key: string, defaultValue: any = null): void {
-    const configValue = this.getConfigValue(key, defaultValue);
-    this.container.when(this.concrete as Constructor<any>).needs(key as any).give(() => configValue);
+  alias(alias: string | symbol, abstract: Bindable): void {
+    this.aliases.set(alias, abstract);
   }
 
-  private getConfigValue(key: string, defaultValue: any): any {
-    // Implement the logic to retrieve the configuration value
-    // Replace with actual logic for fetching config values if needed
-    return defaultValue;
+  /**
+   * Tag multiple abstracts with a tag.
+   * 
+   * @param abstracts - The abstracts to tag.
+   * @param tag - The tag to assign.
+   * @returns The Container instance.
+   * 
+   * @example
+   * ```typescript
+   * container.tag(['ServiceA', 'ServiceB'], 'services');
+   * ```
+   */
+  tag(abstracts: Bindable[], tag: string): this {
+    if (!this.tags.has(tag)) {
+      this.tags.set(tag, []);
+    }
+    this.tags.get(tag)?.push(...abstracts);
+    return this;
+  }
+
+  // Resolution Methods
+
+  /**
+   * Resolve a type.
+   * 
+   * @param abstract - The abstract type to resolve.
+   * @param context - Optional context for contextual bindings.
+   * @returns The resolved instance.
+   * 
+   * @example
+   * ```typescript
+   * const myService = container.resolve<MyService>('MyService');
+   * ```
+   */
+  resolve<T = any>(abstract: Bindable, context?: Bindable): T {
+    const originalAbstract = abstract;
+    abstract = this.getAlias(abstract);
+
+    if (this.instances.has(abstract)) {
+      return this.instances.get(abstract);
+    }
+
+    if (this.resolvingStack.includes(abstract)) {
+      // Return a proxy object for circular dependencies
+      return new Proxy({} as any, {
+        get: (target, prop) => {
+          if (prop === 'isCircularDependency') return true;
+          if (typeof prop === 'string' && prop !== 'then') {
+            return (...args: any[]) => {
+              const resolvedInstance = this.resolve(abstract);
+              return (resolvedInstance as any)[prop](...args);
+            };
+          }
+          return undefined;
+        },
+      });
+    }
+
+    this.resolvingStack.push(abstract);
+
+    try {
+      let binding = this.bindings.get(abstract);
+      if (!binding) {
+        if (this.parent) {
+          return this.parent.resolve<T>(originalAbstract);
+        }
+        throw new UnresolvedDependencyError(originalAbstract);
+      }
+
+      let instance;
+      if (binding.lifetime === Lifetime.Singleton && binding.instance) {
+        instance = binding.instance;
+      } else {
+        if (context) {
+          const contextualBindings = this.contextualBindings.get(context) || [];
+          const contextualBinding = contextualBindings.find(b => b.need === abstract);
+          if (contextualBinding) {
+            instance = typeof contextualBinding.give === 'function' 
+              ? contextualBinding.give(this) 
+              : contextualBinding.give;
+          }
+        }
+        
+        if (!instance) {
+          instance = this.build(binding, context);
+        }
+
+        if (binding.lifetime === Lifetime.Singleton) {
+          binding.instance = instance;
+          this.instances.set(abstract, instance);
+        }
+      }
+
+      return this.applyMiddleware(() => instance);
+    } finally {
+      this.resolvingStack.pop();
+    }
+  }
+
+  /**
+   * Resolve a type asynchronously.
+   * 
+   * @param abstract - The abstract type to resolve.
+   * @param context - Optional context for contextual bindings.
+   * @returns A promise that resolves to the instance.
+   * 
+   * @example
+   * ```typescript
+   * const myService = await container.resolveAsync<MyService>('MyService');
+   * ```
+   */
+  async resolveAsync<T = any>(abstract: Bindable, context?: Bindable): Promise<T> {
+    const instance = await this.resolve<T>(abstract, context);
+    return instance instanceof Promise ? await instance : instance;
+  }
+
+  /**
+   * Create an instance of a class with dependencies.
+   * 
+   * @param Target - The class to instantiate.
+   * @returns The created instance.
+   * 
+   * @example
+   * ```typescript
+   * const myClassInstance = container.createInstance(MyClass);
+   * ```
+   */
+  createInstance<T>(Target: Bindable & WithParamTypes): T {
+    const paramTypes = Target.paramTypes || [];
+    const injections = paramTypes.map((param: any) => this.resolveWithContext(param, Target));
+    return new (Target as any)(...injections);
+  }
+
+  // Contextual Binding Methods
+
+  /**
+   * Create a contextual binding.
+   * 
+   * @param concrete - The concrete type to bind.
+   * @returns A builder for defining the contextual binding.
+   * 
+   * @example
+   * ```typescript
+   * container.when('MyService').needs('Config').give(() => new Config());
+   * ```
+   */
+  when(concrete: Bindable): IContextualBindingBuilder {
+    return new ContextualBindingBuilder(this, concrete);
+  }
+
+  // Lifecycle Methods
+
+  /**
+   * Create a new scope.
+   * 
+   * @returns A new Container instance representing the scope.
+   * 
+   * @example
+   * ```typescript
+   * const scopedContainer = container.createScope();
+   * ```
+   */
+  createScope(): IContainer {
+    const childContainer = new Container();
+    childContainer.parent = this;
+    this.children.push(childContainer);
+    return childContainer;
+  }
+
+  /**
+   * Dispose of the container and its bindings.
+   * 
+   * @example
+   * ```typescript
+   * container.dispose();
+   * ```
+   */
+  dispose(): void {
+    for (const [, binding] of this.bindings) {
+      if (binding.instance && typeof binding.instance.dispose === 'function') {
+        binding.instance.dispose();
+      }
+    }
+    for (const child of this.children) {
+      child.dispose();
+    }
+    this.bindings.clear();
+    this.instances.clear();
+    this.aliases.clear();
+    this.tags.clear();
+    this.contextualBindings.clear();
+    this.children = [];
+  }
+
+  /**
+   * Create a child container.
+   * 
+   * @returns A new Container instance representing the child container.
+   * 
+   * @example
+   * ```typescript
+   * const childContainer = container.createChild();
+   * ```
+   */
+  createChild(): IContainer {
+    const child = new Container();
+    child.parent = this;
+    return child;
+  }
+
+  /**
+   * Bind a transient.
+   * 
+   * @param abstract - The abstract type to bind.
+   * @param factory - The factory function to create the instance.
+   * @returns The Container instance.
+   * 
+   * @example
+   * ```typescript
+   * container.transient('MyService', () => new MyService());
+   * ```
+   */
+  transient(abstract: Bindable, factory: Function): this {
+    this.bindings.set(abstract, {
+      factory,
+      lifetime: Lifetime.Transient,
+      resolver: factory,
+    });
+    return this;
+  }
+
+  /**
+   * Bind a scoped instance.
+   * 
+   * @param abstract - The abstract type to bind.
+   * @param factory - The factory function to create the instance.
+   * @returns The Container instance.
+   * 
+   * @example
+   * ```typescript
+   * container.scoped('MyService', () => new MyService());
+   * ```
+   */
+  scoped(abstract: Bindable, factory: Function): this {
+    this.bindings.set(abstract, {
+      factory,
+      lifetime: Lifetime.Scoped,
+      resolver: (container: Container) => {
+        if (container.instances.has(abstract)) {
+          return container.instances.get(abstract);
+        }
+        const instance = factory(container);
+        container.instances.set(abstract, instance);
+        return instance;
+      },
+    });
+    return this;
+  }
+
+  /**
+   * Lazy bind a type to a factory function.
+   * 
+   * @param token - The token to bind.
+   * @param factory - The factory function to create the instance.
+   * 
+   * @example
+   * ```typescript
+   * container.lazyBind('MyService', () => new MyService());
+   * ```
+   */
+  lazyBind<T>(token: any, factory: () => T): void {
+    this.bind(token, () => {
+      const instance = factory();
+      this.instance(token, instance);
+      return instance;
+    });
+  }
+
+  // Middleware Methods
+
+  /**
+   * Use a middleware function.
+   * 
+   * @param middleware - The middleware function to use.
+   * 
+   * @example
+   * ```typescript
+   * container.use(next => {
+   *   console.log('Before');
+   *   const result = next();
+   *   console.log('After');
+   *   return result;
+   * });
+   * ```
+   */
+  use(middleware: Middleware): void {
+    this.middlewares.push(middleware);
+  }
+
+  // Private Methods
+
+  private resolveWithContext(abstract: Bindable, context: Bindable): any {
+    const contextualBindings = this.contextualBindings.get(context) || [];
+    const binding = contextualBindings.find(b => b.need === abstract);
+    if (binding) {
+      return typeof binding.give === 'function' ? binding.give(this) : binding.give;
+    }
+    return this.resolve(abstract);
+  }
+
+  private build(binding: Binding, context?: Bindable): any {
+    return binding.resolver(this, context);
+  }
+
+  private getAlias(abstract: Bindable): Bindable {
+    if (typeof abstract === 'string' || typeof abstract === 'symbol') {
+      return this.aliases.get(abstract) || abstract;
+    }
+    return abstract;
+  }
+
+  private applyMiddleware(factory: () => any): any {
+    let index = -1;
+    const dispatch = (i: number): any => {
+      if (i <= index) return Promise.reject(new Error('next() called multiple times'));
+      index = i;
+      let fn = this.middlewares[i];
+      if (i === this.middlewares.length) fn = factory;
+      if (!fn) return;
+      try {
+        return fn(() => dispatch(i + 1));
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    };
+    return dispatch(0);
+  }
+
+  // Add this method
+  tagged(tag: string): any[] {
+    const taggedBindables = this.tags.get(tag) || [];
+    return taggedBindables.map(bindable => this.resolve(bindable));
+  }
+}
+
+/**
+ * Contextual Binding Builder
+ * 
+ * The ContextualBindingBuilder class provides a way to define contextual bindings.
+ */
+class ContextualBindingBuilder implements IContextualBindingBuilder {
+  constructor(private container: Container, private concrete: Bindable) {}
+
+  /**
+   * Define the dependency that the concrete type needs.
+   * 
+   * @param need - The dependency that the concrete type needs.
+   * @returns A builder for defining the contextual binding.
+   * 
+   * @example
+   * ```typescript
+   * container.when('MyService').needs('Config').give(() => new Config());
+   * ```
+   */
+  needs(need: Bindable): IContextualBindingNeedsBuilder {
+    return new ContextualBindingNeedsBuilder(this.container, this.concrete, need);
+  }
+}
+
+/**
+ * Contextual Binding Needs Builder
+ * 
+ * The ContextualBindingNeedsBuilder class provides a way to define the value or factory function for a contextual binding.
+ */
+class ContextualBindingNeedsBuilder implements IContextualBindingNeedsBuilder {
+  constructor(
+    private container: Container,
+    private concrete: Bindable,
+    private need: Bindable,
+  ) {}
+
+  /**
+   * Define the value or factory function for the contextual binding.
+   * 
+   * @param give - The value or factory function to provide.
+   * 
+   * @example
+   * ```typescript
+   * container.when('MyService').needs('Config').give(() => new Config());
+   * ```
+   */
+  give(give: Function | any): void {
+    if (!this.container.contextualBindings.has(this.concrete)) {
+      this.container.contextualBindings.set(this.concrete, []);
+    }
+    this.container.contextualBindings.get(this.concrete)?.push({
+      when: this.concrete,
+      need: this.need,
+      give,
+    });
+  }
+}
+
+/**
+ * Observer
+ * 
+ * The Observer class provides a way to implement the observer pattern.
+ */
+export class Observer implements IObserver {
+  private listeners: Map<string, Function[]> = new Map();
+
+  /**
+   * Subscribe to an event.
+   * 
+   * @param event - The event to subscribe to.
+   * @param callback - The callback function to call when the event is published.
+   * 
+   * @example
+   * ```typescript
+   * observer.subscribe('myEvent', data => {
+   *   console.log('Event received:', data);
+   * });
+   * ```
+   */
+  subscribe(event: string, callback: Function) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, []);
+    }
+    this.listeners.get(event)!.push(callback);
+  }
+
+  /**
+   * Publish an event.
+   * 
+   * @param event - The event to publish.
+   * @param data - Optional data to pass to the event listeners.
+   * 
+   * @example
+   * ```typescript
+   * observer.publish('myEvent', { key: 'value' });
+   * ```
+   */
+  publish(event: string, data?: any) {
+    const eventListeners = this.listeners.get(event);
+    if (eventListeners) {
+      eventListeners.forEach(callback => callback(data));
+    }
   }
 }

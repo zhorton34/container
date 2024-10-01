@@ -1,6 +1,6 @@
-import { DIContainer, CircularDependencyError } from "../mod.ts";
+import { Container, CircularDependencyError } from "../mod.ts";
 
-const container = new DIContainer();
+const container = new Container();
 
 class ServiceA {
   constructor(public serviceB: ServiceB) {}

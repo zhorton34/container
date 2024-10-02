@@ -65,345 +65,325 @@ See the [examples](./examples) directory for more usage examples.
 2. Install the required dependencies:
 
 ```bash
-deno add @findhow/zod
 deno add @findhow/container
 ```
 
-## Getting Started
+## Examples
 
-### Basic Usage
 
-#### 1. Create a DI Container
+### Basic Container Binding
+> _This example demonstrates how to bind a simple class to the container and resolve it. It's useful for basic dependency injection where you want to decouple your code from direct instantiations._
 
-First, create a new instance of the container:
+```ts
+import { Container } from "@findhow/container";
 
-```typescript
-import { DIContainer } from "@findhow/dicontainer.ts";
-
-const container = new DIContainer();
-```
-
-#### 2. Bind a Class to the Container
-
-You can bind a class or a factory function to the container. Here's an example
-of binding a class to a container:
-
-```typescript
-class Service {
-  getValue() {
-    return "Hello, DI!";
+class Logger {
+  log(message: string) {
+    console.log(message);
   }
 }
 
-container.bind(Service, () => new Service());
+const container = new Container();
+container.bind('Logger', () => new Logger());
+
+const logger = container.resolve<Logger>('Logger');
+logger.log('Hello, World!'); // Output: Hello, World!
 ```
 
-#### 3. Resolve the Class from the Container
 
-Once you've bound a class, you can resolve it:
+### Singleton Binding
+> _This example demonstrates how to bind a class as a singleton. This ensures that the same instance is returned every time the service is resolved, useful when you want to maintain shared state._
 
-```typescript
-const service = container.resolve(Service);
-console.log(service.getValue()); // Output: Hello, DI!
-```
+```ts
+import { Container } from "@findhow/container";
 
-### Binding Types
-
-#### 1. Singleton Binding
-
-A singleton binding ensures that only one instance of the class is created and
-shared throughout the application.
-
-```typescript
-class SingletonService {
-  value = Math.random();
+class Config {
+  constructor(public env: string) {}
 }
 
-container.singleton(SingletonService, () => new SingletonService());
+const container = new Container();
+container.singleton('Config', () => new Config('production'));
 
-const instance1 = container.resolve(SingletonService);
-const instance2 = container.resolve(SingletonService);
+const config1 = container.resolve<Config>('Config');
+const config2 = container.resolve<Config>('Config');
 
-console.log(instance1 === instance2); // Output: true
+console.log(config1 === config2); // Output: true
 ```
 
-#### 2. Transient Binding
 
-A transient binding creates a new instance of the class every time it's
-resolved.
 
-```typescript
-class TransientService {
-  value = Math.random();
-}
 
-container.transient(TransientService, () => new TransientService());
+### Zod Schema Validation on Binding
+> _This example shows how to use Zod schema validation when binding a service to ensure that the resolved instance meets the expected schema. This is useful for enforcing runtime type safety._
 
-const instance1 = container.resolve(TransientService);
-const instance2 = container.resolve(TransientService);
-
-console.log(instance1 === instance2); // Output: false
-```
-
-#### 3. Scoped Binding
-
-A scoped binding provides the same instance within a specific scope but
-different instances across different scopes.
-
-```typescript
-class ScopedService {
-  value = Math.random();
-}
-
-container.scoped(ScopedService, () => new ScopedService());
-
-const scope1 = container.createScope();
-const scope2 = container.createScope();
-
-const instance1 = scope1.resolve(ScopedService);
-const instance2 = scope2.resolve(ScopedService);
-
-console.log(instance1 === instance2); // Output: false
-```
-
-### Contextual Bindings
-
-Contextual bindings allow you to inject different dependencies based on the
-context in which a service is resolved.
-
-```typescript
-container.bind("config", () => ({ env: "production" }));
-container.when("Service").needs("config").give(() => ({ env: "development" }));
-
-class Service {
-  constructor(public config: any) {}
-}
-
-container.bind(
-  Service,
-  (c: DIContainer) => new Service(c.resolve("config", "Service")),
-);
-
-const service = container.resolve(Service);
-console.log(service.config.env); // Output: development
-```
-
-### Zod Schema Validation
-
-Zod integration allows you to validate resolved instances against schemas at
-runtime.
-
-```typescript
+```ts
+import { Container } from "@findhow/container";
 import { z } from "zod";
 
-const UserSchema = z.object({
+// Define a Zod schema for the service
+const userSchema = z.object({
   id: z.number(),
   name: z.string(),
 });
 
-container.bind(UserSchema, () => ({ id: 1, name: "John Doe" }));
+class UserService {
+  constructor(public id: number, public name: string) {}
+}
 
-const user = container.resolve(UserSchema);
-console.log(user); // Output: { id: 1, name: 'John Doe' }
+const container = new Container();
+
+// Bind the service and validate it against the Zod schema
+container.bind('UserService', () => new UserService(1, 'Alice'), userSchema);
+
+const userService = container.resolve<UserService>('UserService');
+console.log(userService); // Output: UserService { id: 1, name: 'Alice' }
 ```
 
-If an instance does not conform to the schema, an `InvalidSchemaError` will be
-thrown:
+### Invalid Schema Detection
+> _This example demonstrates how the container throws an error if the resolved instance does not conform to the Zod schema, helping catch errors early during service resolution._
 
-```typescript
-assertThrows(
-  () => {
-    container.bind(UserSchema, () => ({ id: 1, name: 123 })); // Invalid data
-  },
-  InvalidSchemaError,
-  "Invalid schema for UserSchema",
-);
-```
+```ts
+import { Container } from "@findhow/container";
+import { z } from "zod";
 
-### Middleware
-
-Middlewares allow you to intercept and modify the resolution process:
-
-```typescript
-container.use((next) => {
-  console.log("Resolving a dependency");
-  return next();
+// Define a Zod schema for validation
+const userSchema = z.object({
+  id: z.number(),
+  name: z.string(),
 });
 
-class MiddlewareService {
-  getValue() {
-    return "Middleware Example";
+class InvalidUserService {
+  constructor(public id: string, public name: number) {} // Invalid types
+}
+
+const container = new Container();
+
+try {
+  // Try binding the invalid service and validate against the schema
+  container.bind('InvalidUserService', () => new InvalidUserService('one', 123), userSchema);
+  container.resolve<InvalidUserService>('InvalidUserService');
+} catch (error) {
+  console.error(error.message); 
+  // Output: Invalid schema for InvalidUserService: Expected number, received string...
+}
+```
+
+
+### Schema Validation with Nested Objects
+> _This example shows how Zod can be used to validate more complex services with nested objects, ensuring that the entire structure is type-safe at runtime._
+
+```ts
+import { Container } from "@findhow/container";
+import { z } from "zod";
+
+// Define a nested Zod schema
+const configSchema = z.object({
+  database: z.object({
+    host: z.string(),
+    port: z.number(),
+  }),
+  apiKey: z.string(),
+});
+
+class ConfigService {
+  constructor(public config: { database: { host: string; port: number }; apiKey: string }) {}
+}
+
+const container = new Container();
+
+// Bind the service with schema validation
+container.bind('ConfigService', () => new ConfigService({
+  database: { host: 'localhost', port: 5432 },
+  apiKey: 'abc123',
+}), configSchema);
+
+const configService = container.resolve<ConfigService>('ConfigService');
+console.log(configService.config.database.host); // Output: localhost
+```
+
+
+### Conditional Schema Validation
+> _This example shows how you can use conditional logic inside Zod schemas to handle more dynamic validation scenarios during dependency injection, such as checking optional fields based on other conditions._
+
+```ts
+import { Container } from "@findhow/container";
+import { z } from "zod";
+
+// Define a schema with conditional fields
+const userSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  email: z.string().optional(), // Optional field
+  role: z.enum(['admin', 'user']),
+}).refine(data => data.role === 'admin' ? !!data.email : true, {
+  message: "Admin users must have an email",
+});
+
+class UserService {
+  constructor(public id: number, public name: string, public email?: string, public role: string) {}
+}
+
+const container = new Container();
+
+// Bind a user with valid schema (admin with email)
+container.bind('UserServiceAdmin', () => new UserService(1, 'Alice', 'alice@example.com', 'admin'), userSchema);
+
+const userServiceAdmin = container.resolve<UserService>('UserServiceAdmin');
+console.log(userServiceAdmin); // Output: UserService { id: 1, name: 'Alice', email: 'alice@example.com', role: 'admin' }
+
+try {
+  // Try binding a user without an email for an admin role (invalid)
+  container.bind('UserServiceInvalid', () => new UserService(2, 'Bob', undefined, 'admin'), userSchema);
+  container.resolve<UserService>('UserServiceInvalid');
+} catch (error) {
+  console.error(error.message); // Output: Admin users must have an email
+}
+```
+
+
+### Async Binding with Zod Schema Validation
+> _This example demonstrates how you can use Zod schema validation with asynchronous services, ensuring that even services resolved asynchronously meet the expected type safety criteria._
+
+```ts
+import { Container } from "@findhow/container";
+import { z } from "zod";
+
+// Define a Zod schema for validation
+const userSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+});
+
+class UserService {
+  constructor(public id: number, public name: string) {}
+
+  static async create() {
+    // Simulate async service creation
+    return new Promise<UserService>((resolve) => {
+      setTimeout(() => resolve(new UserService(1, 'Async Alice')), 1000);
+    });
   }
 }
 
-container.bind(MiddlewareService, () => new MiddlewareService());
-const service = container.resolve(MiddlewareService); // Logs: 'Resolving a dependency'
+const container = new Container();
+
+// Bind the async service and validate against the schema
+container.bind('UserService', async () => await UserService.create(), userSchema);
+
+(async () => {
+  const userService = await container.resolveAsync<UserService>('UserService');
+  console.log(userService); // Output: UserService { id: 1, name: 'Async Alice' }
+})();
 ```
 
-### Async Bindings
+### Contextual Binding with Zod Schema Validation
+> _This example shows how Zod schema validation can be combined with contextual bindings, ensuring that each context adheres to the correct schema._
 
-You can bind asynchronous services to the container and resolve them using
-`resolveAsync`.
+```ts
+import { Container } from "@findhow/container";
+import { z } from "zod";
 
-```typescript
+// Define a Zod schema
+const configSchema = z.object({
+  host: z.string(),
+  port: z.number(),
+});
+
+class ConfigService {
+  constructor(public config: { host: string; port: number }) {}
+}
+
+const container = new Container();
+
+// Bind a default config service
+container.bind('ConfigService', () => new ConfigService({ host: 'localhost', port: 5432 }), configSchema);
+
+// Contextual binding with different config
+container.when('AdminService').needs('ConfigService').give(() => new ConfigService({ host: 'admin-host', port: 3306 }), configSchema);
+
+const defaultConfigService = container.resolve<ConfigService>('ConfigService');
+console.log(defaultConfigService.config); // Output: { host: 'localhost', port: 5432 }
+
+const adminConfigService = container.resolve<ConfigService>('ConfigService', 'AdminService');
+console.log(adminConfigService.config); // Output: { host: 'admin-host', port: 3306 }
+```
+
+### Zod Schema Validation with Bound Object
+> _This example demonstrates how Zod schema validation can be used to validate the structure of a bound object in the container. It ensures that the object conforms to the defined schema when resolved._
+
+```ts
+import { Container } from "@findhow/container";
+import { z } from "zod";
+
+// Define a Zod schema
+const userSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+});
+
+const container = new Container();
+
+// Bind an object that matches the Zod schema
+container.bind('User', () => ({ id: 1, name: 'Alice' }), userSchema);
+
+const user = container.resolve('User');
+console.log(user); // Output: { id: 1, name: 'Alice' }
+```
+
+### Invalid Zod Schema Error
+> _This example shows how the container throws an `InvalidSchemaError` when the bound object doesn't conform to the expected Zod schema._
+
+```ts
+import { Container } from "@findhow/container";
+import { z } from "zod";
+import { InvalidSchemaError } from './errors.ts';
+
+// Define a Zod schema
+const schema = z.object({ name: z.string() });
+
+const container = new Container();
+
+// Attempt to bind an object that doesn't conform to the schema
+try {
+  container.bind('InvalidObject', () => ({ name: 123 }), schema);
+} catch (error) {
+  console.error(error instanceof InvalidSchemaError); // Output: true
+  console.error(error.message); // Output: Invalid schema for InvalidObject
+}
+```
+
+### Async Binding with Zod Schema Validation
+> _This example demonstrates how you can bind an asynchronous service and validate it against a Zod schema after it's resolved. It ensures that even async services are validated for type safety._
+
+```ts
+import { Container } from "@findhow/container";
+import { z } from "zod";
+
+// Define a Zod schema for validation
+const serviceSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+});
+
 class AsyncService {
+  id = 1;
+  name = 'AsyncService';
   async getValue() {
-    return "Async Value";
+    return this.name;
   }
 }
 
-container.bind(AsyncService, async () => {
-  await new Promise((resolve) => setTimeout(resolve, 100)); // Simulate async operation
-  return new AsyncService();
-});
+const container = new Container();
 
-const service = await container.resolveAsync(AsyncService);
-console.log(await service.getValue()); // Output: Async Value
+// Bind the async service and validate against the schema
+container.bind('AsyncService', async () => new AsyncService(), serviceSchema);
+
+(async () => {
+  const service = await container.resolveAsync<AsyncService>('AsyncService');
+  console.log(await service.getValue()); // Output: AsyncService
+})();
 ```
-
-### Circular Dependency Detection
-
-The container detects circular dependencies and throws a
-`CircularDependencyError`.
-
-```typescript
-class A {
-  constructor(public b: B) {}
-}
-
-class B {
-  constructor(public a: A) {}
-}
-
-container.bind(A, (c: DIContainer) => new A(c.resolve(B)));
-container.bind(B, (c: DIContainer) => new B(c.resolve(A)));
-
-assertThrows(
-  () => container.resolve(A),
-  CircularDependencyError,
-  "Circular dependency detected",
-);
-```
-
-### Tagging and Aliasing
-
-Tagging allows you to bind multiple services to a tag and resolve them as a
-group:
-
-```typescript
-class ReportA {
-  generate() {
-    return "Report A";
-  }
-}
-
-class ReportB {
-  generate() {
-    return "Report B";
-  }
-}
-
-container.bind(ReportA, () => new ReportA());
-container.bind(ReportB, () => new ReportB());
-container.tag([ReportA, ReportB], "reports");
-
-const reports = container.tagged("reports");
-reports.forEach((report) => console.log(report.generate()));
-// Output: 'Report A', 'Report B'
-```
-
-Aliasing allows you to resolve the same service with different identifiers:
-
-```typescript
-container.bind("Logger", () => ({ log: () => console.log("Logging...") }));
-container.alias("Log", "Logger");
-
-const logger = container.resolve("Log");
-logger.log(); // Output: 'Logging...'
-```
-
-## Error Handling
-
-The container provides detailed error messages and custom error classes to help
-diagnose issues:
-
-- `InvalidExtensionError`: Thrown when trying to extend a binding that doesn't
-  exist.
-- `InvalidAliasError`: Thrown when trying to resolve an alias that doesn't
-  exist.
-- `InvalidTagError`: Thrown when resolving a tag with no bindings.
-- `InvalidContextualBindingError`: Thrown when a contextual binding is invalid
-  or undefined.
-- `CircularDependencyError`: Thrown when circular dependencies are detected.
-- `UnresolvedDependencyError`: Thrown when trying to resolve a dependency that
-  hasn't been bound to the container.
-- `InvalidTypeError`: Thrown when the resolved value doesn't match the expected
-  type.
-- `InvalidSchemaError`: Thrown when a resolved instance doesn't match the Zod
-  schema.
-
-## Advanced Usage
-
-### Optional Dependencies
-
-You can gracefully handle optional dependencies by catching errors during
-resolution:
-
-```typescript
-class Service {
-  constructor(public optionalDependency?: any) {}
-}
-
-container.bind(Service, (c: DIContainer) => {
-  let optionalDep;
-  try {
-    optionalDep = c.resolve("OptionalDep");
-  } catch (e) {
-    optionalDep = null;
-  }
-  return new Service(optionalDep);
-});
-
-const service = container.resolve(Service);
-console.log(service.optionalDependency); // Output: null
-```
-
-### Property Injection
-
-You can inject dependencies into class properties manually:
-
-```typescript
-class Dependency {
-  getValue() {
-    return "Injected Value";
-  }
-}
-
-class Service {
-  dependency!: Dependency;
-
-  getServiceValue() {
-    return this.dependency.getValue();
-  }
-}
-
-container.bind(Dependency, () => new Dependency());
-container.bind(Service, (c: DIContainer) => {
-  const service = new Service();
-  service.dependency = c.resolve(Dependency);
-  return service;
-});
-
-const service = container.resolve(Service);
-console.log(service.getServiceValue()); // Output: 'Injected Value'
-```
-
-## Conclusion
-
-This DI container provides a flexible and feature-rich solution for managing
-dependencies in TypeScript applications. With support for various binding types,
-contextual bindings, middleware, and Zod schema validation, it offers powerful
-tools for building scalable and maintainable applications.
-
 
 [Clean Code Studio](https://cleancode.studio)
+
+These examples demonstrate the flexibility of combining Zod schema validation with the `@findhow/container` dependency injection system to ensure runtime safety for both synchronous and asynchronous services. You can enforce validation in various contexts, including conditional logic and nested structures.

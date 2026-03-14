@@ -1,21 +1,21 @@
-import { z } from 'zod';
-import { 
-  InvalidSchemaError, 
-  CircularDependencyError, 
-  UnresolvedDependencyError 
+import type { z } from 'zod';
+import { ZodError } from 'zod';
+import {
+  InvalidSchemaError,
+  UnresolvedDependencyError
 } from './errors.ts';
-import { 
-  Bindable, 
-  Binding, 
-  ContextualBinding, 
-  Middleware, 
-  WithParamTypes, 
-  IContainer, 
-  IContextualBindingBuilder, 
-  IContextualBindingNeedsBuilder, 
+import type {
+  Bindable,
+  Binding,
+  ContextualBinding,
+  Middleware,
+  WithParamTypes,
+  IContainer,
+  IContextualBindingBuilder,
+  IContextualBindingNeedsBuilder,
   IObserver,
-  Lifetime, // Import Lifetime enum directly
 } from './types.ts';
+import { Lifetime } from './types.ts';
 
 /**
  * Dependency Injection Container
@@ -55,7 +55,7 @@ export class Container implements IContainer {
         const instance = factory(this);
         schema.parse(instance);
       } catch (error) {
-        if (error instanceof z.ZodError) {
+        if (error instanceof ZodError) {
           throw new InvalidSchemaError(`Invalid schema for ${String(abstract)}: ${error.message}`);
         }
         throw error;
@@ -167,7 +167,7 @@ export class Container implements IContainer {
     if (this.resolvingStack.includes(abstract)) {
       // Return a proxy object for circular dependencies
       return new Proxy({} as any, {
-        get: (target, prop) => {
+        get: (_target, prop) => {
           if (prop === 'isCircularDependency') return true;
           if (typeof prop === 'string' && prop !== 'then') {
             return (...args: any[]) => {
@@ -183,7 +183,7 @@ export class Container implements IContainer {
     this.resolvingStack.push(abstract);
 
     try {
-      let binding = this.bindings.get(abstract);
+      const binding = this.bindings.get(abstract);
       if (!binding) {
         if (this.parent) {
           return this.parent.resolve<T>(originalAbstract);

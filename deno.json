@@ -10,11 +10,15 @@
     "test": "deno test --allow-all"
   },
   "imports": {
-    "zod": "npm:zod@3.21.4",
-    "@std/": "jsr:@std/",
-    "@std/async": "jsr:@std/async",
-    "@std/assert": "jsr:@std/assert",
-    "@std/collections": "jsr:@std/collections"
+    "zod": "npm:zod@^3.21.4",
+    "@std/assert": "jsr:@std/assert@^1.0.19",
+    "@std/async": "jsr:@std/async@^1.0.5",
+    "@std/collections": "jsr:@std/collections@^1.0.0"
+  },
+  "lint": {
+    "rules": {
+      "exclude": ["ban-types", "no-explicit-any"]
+    }
   },
   "exports": {
     ".": "./mod.ts"  

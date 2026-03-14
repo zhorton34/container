@@ -1,4 +1,5 @@
-import { z } from "zod";
+import type { z } from "zod";
+import { ZodType } from "zod";
 
 /**
  * Enum representing the different types of errors that can occur within the container.
@@ -24,12 +25,12 @@ export class InvalidExtensionError extends Error {
      * Creates an instance of InvalidExtensionError.
      * @param type - The type that was attempted to be extended. This can be a function, a Zod schema, or a string.
      */
-    constructor(type: Function | z.ZodType<any> | string) {
+    constructor(type: Function | z.ZodType<unknown> | string) {
       let typeDescription: string;
 
       if (typeof type === 'function') {
         typeDescription = type.name || 'Anonymous Function';
-      } else if (type instanceof z.ZodType) {
+      } else if (type instanceof ZodType) {
         typeDescription = 'ZodSchema';
       } else {
         typeDescription = type;

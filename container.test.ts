@@ -4,10 +4,9 @@ import {
 } from '@std/assert';
 import { z } from 'zod';
 import { Container, Observer } from './container.ts';
-import { 
-  InvalidSchemaError, 
+import {
+  InvalidSchemaError,
   UnresolvedDependencyError,
-  CircularDependencyError
 } from './errors.ts';
 
 class ScopedService {
@@ -191,7 +190,7 @@ Deno.test('Container - Async Binding', async () => {
   const container = new Container();
 
   class AsyncService {
-    async getValue() {
+    getValue() {
       return 'Async Value';
     }
   }
@@ -244,7 +243,7 @@ Deno.test('Container - Optional Dependency', () => {
     let optionalDep;
     try {
       optionalDep = c.resolve('OptionalDep');
-    } catch (e) {
+    } catch (_e) {
       optionalDep = null;
     }
     return new Service(optionalDep);
@@ -360,7 +359,7 @@ Deno.test('Container - Dependency Disposal', () => {
   }
 
   container.singleton(DisposableService, () => new DisposableService());
-  const service = container.resolve(DisposableService);
+  container.resolve(DisposableService);
 
   container.dispose();
 
